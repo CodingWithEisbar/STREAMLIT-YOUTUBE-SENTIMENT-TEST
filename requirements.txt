@@ -1,4 +1,4 @@
-!pip install python-dotenv
+#!pip install python-dotenv
 altair==5.4.1
 annotated-types==0.7.0
 attrs==24.2.0
@@ -53,7 +53,7 @@ pydeck==0.9.1
 Pygments==2.18.0
 pyparsing==3.1.4
 python-dateutil==2.9.0.post0
-#python-dotenv==1.0.1
+python-dotenv
 python-env==1.0.0
 pytz==2024.2
 referencing==0.35.1
