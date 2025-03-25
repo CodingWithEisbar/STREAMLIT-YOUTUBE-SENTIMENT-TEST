@@ -33,7 +33,7 @@ youtube = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
 
 # Prompt dùng để tóm tắt nội dung video
 PROMPT = """
-You are a YouTube video summarizer. Summarize the transcript in 300 words or less with key points.
+Bạn là người tóm tắt video trên YouTube. Tóm tắt bản ghi chép trong 300 từ hoặc ít hơn với các điểm chính.
 """
 
 # 📌 Hàm gọi Gemini AI để tóm tắt transcript
