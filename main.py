@@ -160,7 +160,41 @@ if st.button("Generate Summary"):
             except Exception as e:
                 st.error(str(e))
 
- fig = plot_sentiment_pie_chart(comments['positive_comments'], comments['negative_comments'], comments['total_comments'])
+ for idx, response in enumerate(st.session_state.responses):
+    video_details = response.get('video_details')
+    comments = response.get('comments')
+
+    # Display video details
+    if video_details:
+        if 'thumbnail_url' in response:
+            st.image(response['thumbnail_url'], use_column_width=True)
+
+        st.markdown(f"<h2 style='text-align: center; color: #FF4500;'>📹 Video Title:</h2>", unsafe_allow_html=True)
+        st.markdown(f"<p style='text-align: center;'>{video_details['title']}</p>", unsafe_allow_html=True)
+        
+        st.markdown(f"<h2 style='text-align: center; color: #FF4500;'>📺 Channel Name:</h2>", unsafe_allow_html=True)
+        st.markdown(f"<p style='text-align: center;'>{video_details['channel_title']}</p>", unsafe_allow_html=True)
+        
+        st.markdown(f"<h2 style='text-align: center; color: #FF4500;'>👁️ Views:</h2>", unsafe_allow_html=True)
+        st.markdown(f"<p style='text-align: center;'>{video_details['view_count']}</p>", unsafe_allow_html=True)
+        
+        st.markdown(f"<h2 style='text-align: center; color: #FF4500;'>📅 Upload Date:</h2>", unsafe_allow_html=True)
+        st.markdown(f"<p style='text-align: center;'>{video_details['upload_date']}</p>", unsafe_allow_html=True)
+        
+        st.markdown(f"<h2 style='text-align: center; color: #FF4500;'>⏱️ Duration:</h2>", unsafe_allow_html=True)
+        st.markdown(f"<p style='text-align: center;'>{video_details['duration']}</p>", unsafe_allow_html=True)
+        
+        st.markdown(f"<h2 style='text-align: center; color: #FF4500;'>👍 Likes:</h2>", unsafe_allow_html=True)
+        st.markdown(f"<p style='text-align: center;'>{video_details['like_count']}</p>", unsafe_allow_html=True)
+        
+        st.markdown(f"<h2 style='text-align: center; color: #FF4500;'>👎 Dislikes:</h2>", unsafe_allow_html=True)
+        st.markdown(f"<p style='text-align: center;'>{video_details['dislike_count']}</p>", unsafe_allow_html=True)
+        
+        st.markdown(f"<h2 style='text-align: center; color: #FF4500;'>💬 Total Comments:</h2>", unsafe_allow_html=True)
+        st.markdown(f"<p style='text-align: center;'>{comments['total_comments']}</p>", unsafe_allow_html=True)
+
+        # Plot and display pie chart for comments sentiment
+        fig = plot_sentiment_pie_chart(comments['positive_comments'], comments['negative_comments'], comments['total_comments'])
         st.pyplot(fig)
         
         st.markdown(f"<h2 style='text-align: center; color: #32CD32;'>👍 Positive Comments:</h2>", unsafe_allow_html=True)
@@ -168,4 +202,5 @@ if st.button("Generate Summary"):
         
         st.markdown(f"<h2 style='text-align: center; color: #FF6347;'>👎 Negative Comments:</h2>", unsafe_allow_html=True)
         st.markdown(f"<p style='text-align: center;'>{comments['negative_comments']} ({(comments['negative_comments']/comments['total_comments'])*100:.2f}%)</p>", unsafe_allow_html=True)
+        
         
