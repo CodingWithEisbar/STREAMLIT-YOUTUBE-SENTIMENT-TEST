@@ -3,7 +3,8 @@ import json
 import os
 import streamlit as st
 import torch
-from transformers import AutoTokenizer, AutoModelForSequenceClassification
+#from transformers import AutoTokenizer, AutoModelForSequenceClassification
+from transformers import BertTokenizer, BertForSequenceClassification
 import yt_dlp
 from googleapiclient.discovery import build
 # import underthesea  # Commented out as it might not be used
