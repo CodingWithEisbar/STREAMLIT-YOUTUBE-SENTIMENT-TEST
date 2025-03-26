@@ -302,7 +302,7 @@ for idx, response in enumerate(st.session_state.responses):
         fig = plot_sentiment_pie_chart(comments['positive_comments'], comments['negative_comments'], comments['total_comments'])
         st.pyplot(fig)
 
-        st.markdown(f"<h2 style='text-align: center; color: #32CD32;'>👍 Positive Comments:</h2>", unsafe_allow_html=True)
+        st.markdown(f"<h2 style='text-align: center; color: #000000;'>👍 Positive Comments:</h2>", unsafe_allow_html=True)
         st.markdown(f"<p style='text-align: center;'>{comments['positive_comments']} ({(comments['positive_comments']/comments['total_comments'])*100:.2f}%)</p>", unsafe_allow_html=True)
 
         st.markdown(f"<h2 style='text-align: center; color: #FF6347;'>👎 Negative Comments:</h2>", unsafe_allow_html=True)
@@ -311,7 +311,7 @@ for idx, response in enumerate(st.session_state.responses):
         # Add a toggle button to show/hide the top comments
         show_comments = st.checkbox("Show Top Comments", key=f"toggle_comments_{idx}")
         if show_comments:
-            st.markdown(f"<h2 style='text-align: center; color: #32CD32;'>👍 Top 3 Positive Comments:</h2>", unsafe_allow_html=True)
+            st.markdown(f"<h2 style='text-align: center; color: #000000;'>👍 Top 3 Positive Comments:</h2>", unsafe_allow_html=True)
             for comment in comments['positive_comments_list']:
                 st.markdown(f"<div style='background-color: #DFF0D8; padding: 10px; border-radius: 5px;'>{comment}</div>", unsafe_allow_html=True)
 
