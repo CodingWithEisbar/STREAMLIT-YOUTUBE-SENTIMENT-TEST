@@ -6,16 +6,18 @@ import torch
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 import yt_dlp
 from googleapiclient.discovery import build
+# import underthesea  # Commented out as it might not be used
 import logging
-import matplotlib.pyplot as plt
-import numpy as np
+import matplotlib.pyplot as plt  # Import matplotlib
+# from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer # Assuming this is still needed
+import numpy as np  # Import numpy
 
-# Your API Key - should be stored securely, not hardcoded
-API_KEY = "YOUR_API_KEY"  # Replace with your actual API key
-
-# Cấu hình logging
+# Cấu hình logging (ví dụ, ghi vào file)
 logging.basicConfig(filename='app.log', level=logging.ERROR,
                     format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Your API Key - should be stored securely, not hardcoded
+API_KEY = "AIzaSyBhEqWTbT3v_jVr9VBr3HYKi3dEjKc83-M"  # Replace with your actual API key
 
 
 @st.cache_resource
@@ -52,7 +54,7 @@ def preprocess_model_input_str(text, video_title=""):
     if not text:
         return ""
 
-    regex_pattern = r"(http|www).*(\/|\/\/)\s?|[-()+*&^%$#!@\";<>\/\.\?]{3,}|\n|#.*|\w*:"
+    regex_pattern = r"(http|www).(\/|\/\/)\s?|[-()+&^%$#!@\";<>\/\.\?]{3,}|\n|#.|\w:"
     clean_str = re.sub(r"\s{2,}", " ", re.sub(regex_pattern, " ", text)).replace(video_title, "").strip()
     return clean_str
 
