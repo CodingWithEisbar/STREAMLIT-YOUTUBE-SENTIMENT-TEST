@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt  # Import matplotlib
 # from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer # Assuming this is still needed
 import numpy as np  # Import numpy
 
+
 # Cấu hình logging (ví dụ, ghi vào file)
 logging.basicConfig(filename='app.log', level=logging.ERROR,
                     format='%(asctime)s - %(levelname)s - %(message)s')
@@ -22,7 +23,14 @@ API_KEY = "AIzaSyBhEqWTbT3v_jVr9VBr3HYKi3dEjKc83-M"  # Replace with your actual 
 
 @st.cache_resource
 def load_model():
-    model_id = "wonrax/phobert-base-vietnamese-sentiment"
+
+    PATH = 'sentiment_classifier.pth'
+    tokenizer = BertTokenizer.from_pretrained(PATH, local_files_only=True)
+    model = BertForSequenceClassification.from_pretrained(PATH)
+
+    return tokenizer, model
+
+    """model_id = "wonrax/phobert-base-vietnamese-sentiment"
     tokenizer = AutoTokenizer.from_pretrained(model_id)
     model = AutoModelForSequenceClassification.from_pretrained(model_id)
 
@@ -30,7 +38,7 @@ def load_model():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model.to(device)
 
-    return tokenizer, model
+    return tokenizer, model"""
 
 
 def analyze_sentiment(text):
