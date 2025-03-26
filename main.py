@@ -1,166 +1,284 @@
-from googleapiclient.discovery import build
+import re
 import json
-import yt_dlp
+import os
 import streamlit as st
 import torch
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
-import numpy as np
-import re
-import underthesea
-import google.generativeai as genai
-from youtube_transcript_api import YouTubeTranscriptApi, NoTranscriptFound
-import os
-import isodate
-from datetime import datetime
-import time
-from googleapiclient.errors import HttpError
-from dateutil import parser
+import yt_dlp
+from googleapiclient.discovery import build
+import logging
 import matplotlib.pyplot as plt
-import nltk
-from nltk.sentiment.vader import SentimentIntensityAnalyzer
+import numpy as np
 
-nltk.download('vader_lexicon')
+# Your API Key - should be stored securely, not hardcoded
+API_KEY = "YOUR_API_KEY"  # Replace with your actual API key
 
-# 🔥 Thay YOUR_YOUTUBE_API_KEY và YOUR_GENAI_API_KEY bằng API key của bạn
-YOUTUBE_API_KEY = "AIzaSyBhEqWTbT3v_jVr9VBr3HYKi3dEjKc83-M"
-GENAI_API_KEY = "AIzaSyArb6Eme11X4tl8mhreEQUfRLkTjqTP59I"
+# Cấu hình logging
+logging.basicConfig(filename='app.log', level=logging.ERROR,
+                    format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Cấu hình API của Google Generative AI
-genai.configure(api_key=GENAI_API_KEY)
 
-# Khởi tạo YouTube API client
-youtube = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
+@st.cache_resource
+def load_model():
+    model_id = "wonrax/phobert-base-vietnamese-sentiment"
+    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    model = AutoModelForSequenceClassification.from_pretrained(model_id)
 
-# Prompt dùng để tóm tắt nội dung video
-PROMPT = """
-Bạn là người tóm tắt video trên YouTube. Tóm tắt bản ghi chép trong 300 từ hoặc ít hơn với các điểm chính.
-"""
+    # Move model to GPU if available
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model.to(device)
 
-# 📌 Hàm gọi Gemini AI để tóm tắt transcript
-def get_gemini_response(transcript_text):
-    model = genai.GenerativeModel("gemini-1.5-flash")
-    response = model.generate_content(transcript_text + PROMPT)
-    return response.text
-
-# 📌 Hàm lấy transcript của video
-def extract_transcript(video_id, languages=['vi']):
-    for lang in languages:
-        try:
-            transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=[lang])
-            return " ".join([entry['text'] for entry in transcript_list])
-        except NoTranscriptFound:
-            continue
-    raise Exception("No transcript found in the provided languages.")
-
-# 📌 Hàm lấy video_id từ URL YouTube
-def extract_video_id(url):
-    patterns = [r'v=([^&]+)', r'youtu\.be/([^?]+)']
-    for pattern in patterns:
-        match = re.search(pattern, url)
-        if match:
-            return match.group(1)
-    return None
-
-# 📌 Hàm lấy thông tin video từ API
-def get_video_details(video_id):
-    try:
-        response = youtube.videos().list(
-            part="snippet,statistics,contentDetails",
-            id=video_id
-        ).execute()
-        video_data = response['items'][0]
-        duration = isodate.parse_duration(video_data['contentDetails']['duration'])
-        return {
-            'title': video_data['snippet']['title'],
-            'channel': video_data['snippet']['channelTitle'],
-            'views': video_data['statistics'].get('viewCount', 'N/A'),
-            'upload_date': parser.parse(video_data['snippet']['publishedAt']).strftime("%Y-%m-%d"),
-            'duration': f"{int(duration.total_seconds() // 60)}:{int(duration.total_seconds() % 60):02}",
-            'likes': video_data['statistics'].get('likeCount', 'N/A')
-        }
-    except HttpError as e:
-        raise Exception(f"YouTube API error: {str(e)}")
-
-# 📌 Hàm load model phân tích cảm xúc tiếng Việt
-def load_sentiment_model():
-    tokenizer = AutoTokenizer.from_pretrained("wonrax/phobert-base-vietnamese-sentiment")
-    model = AutoModelForSequenceClassification.from_pretrained("wonrax/phobert-base-vietnamese-sentiment")
     return tokenizer, model
 
-# 📌 Hàm phân tích cảm xúc
+
 def analyze_sentiment(text):
-    tokenizer, model = load_sentiment_model()
-    inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=512, padding=True)
+    tokenizer, model = load_model()
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model.to(device)
+    tokenizer.padding_side = "left"
+    inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=512, padding=True).to(device)
     with torch.no_grad():
         outputs = model(**inputs)
-        predictions = torch.nn.functional.softmax(outputs.logits, dim=1)
-    return predictions.numpy()[0]
+        predictions = torch.nn.functional.softmax(outputs.logits, dim=1).cpu().numpy()[0]  # Move to CPU and convert to NumPy array
 
-# 📌 Hàm tiền xử lý văn bản
-def preprocess_text(text):
-    return re.sub(r'http\S+|www\S+|[^\w\s]', '', text).strip()
+    sentiment_labels = ["Negative", "Neutral", "Positive"]
+    predicted_class = np.argmax(predictions)  # Get index of max value
+    sentiment_label = sentiment_labels[predicted_class]
 
-# 📌 Hàm lấy mô tả video
-def get_desc_chat(video_url):
-    video_id = extract_video_id(video_url)
-    if not video_id:
-        raise ValueError("Invalid YouTube URL.")
+    return sentiment_label, predictions
+
+
+def preprocess_model_input_str(text, video_title=""):
+    if not text:
+        return ""
+
+    regex_pattern = r"(http|www).*(\/|\/\/)\s?|[-()+*&^%$#!@\";<>\/\.\?]{3,}|\n|#.*|\w*:"
+    clean_str = re.sub(r"\s{2,}", " ", re.sub(regex_pattern, " ", text)).replace(video_title, "").strip()
+    return clean_str
+
+
+def get_video_details_with_chat(video_url: str, api_key: str) -> dict:
+    video_id_match = re.search(r"v=([a-zA-Z0-9_-]{11})", video_url)
+    if not video_id_match:
+        return {"error": "Invalid YouTube URL. Could not extract video ID."}
+
+    video_id = video_id_match.group(1)
+
+    # Fetch video description using YouTube API
+    youtube = build("youtube", "v3", developerKey=api_key)
+    description = ""
     try:
-        response = youtube.videos().list(part="snippet", id=video_id).execute()
-        description = response['items'][0]['snippet']['description']
-        return preprocess_text(description), []
-    except Exception as e:
-        raise Exception(f"Error fetching video details: {str(e)}")
+        response = youtube.videos().list(
+            part="snippet",
+            id=video_id
+        ).execute()
 
-# 📌 Hàm vẽ biểu đồ cảm xúc
-def plot_sentiment_pie_chart(positive, negative, total):
-    labels = ['Positive', 'Negative', 'Neutral']
-    sizes = [positive, negative, total - (positive + negative)]
+        if not response["items"]:
+            return {"error": "Video not found. Check the URL or video ID."}
+
+        description = response["items"][0]["snippet"]["description"]
+    except Exception as e:
+        logging.error(f"Error fetching video details from YouTube API: {str(e)}")
+        return {"error": f"An error occurred while fetching video details: {str(e)}"}
+
+    # Download live chat subtitles using yt_dlp
+    ydl_opts = {
+        'writesubtitles': True,
+        'skip_download': True,
+        'subtitleslangs': ['live_chat'],
+        'outtmpl': f'{video_id}',
+    }
+    live_chat_messages = []
+    subtitle_file = f"{video_id}.live_chat.json"
+
+    def parse_jsonl(file_path):
+        data = []
+        with open(file_path, 'r', encoding='utf-8') as file:
+            for line in file:
+                data.append(json.loads(line))
+        return data
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info_dict = ydl.extract_info(video_url, download=True)
+            try:
+                data = parse_jsonl(subtitle_file)
+                for lc in data:
+                    try:
+                        lc_actions = lc.get('replayChatItemAction', {}).get('actions', [])
+                        for act in lc_actions:
+                            live_chat = act.get('addChatItemAction', {}).get('item', {}).get('liveChatTextMessageRenderer', None)
+                            if live_chat:
+                                runs = live_chat['message']['runs']
+                                for run in runs:
+                                    live_chat_messages.append(run['text'])
+                    except Exception as e:
+                        logging.warning(f"Error processing a live chat message: {str(e)}")
+                        continue
+            except FileNotFoundError:
+                logging.error(f"Live chat file not found: {subtitle_file}")
+                return {
+                    "video_title": info_dict['title'],
+                    "description": description,
+                    "live_chat": [],
+                    "error": f"Live chat file not found: {subtitle_file}"
+                }
+            except json.JSONDecodeError as e:
+                logging.error(f"Error parsing JSON in live chat file: {str(e)}")
+                return {
+                    "video_title": info_dict['title'],
+                    "description": description,
+                    "live_chat": [],
+                    "error": f"Error parsing live chat JSON: {str(e)}"
+                }
+
+    except Exception as e:
+        logging.error(f"An error occurred while downloading live chat: {str(e)}")
+        return {
+            "video_title": "",
+            "description": description,
+            "live_chat": [],
+            "error": f"An error occurred while downloading live chat: {str(e)}"
+        }
+    finally:
+        try:
+            os.remove(subtitle_file)
+            logging.info(f"Deleted temporary file: {subtitle_file}")
+        except FileNotFoundError:
+            pass
+        except Exception as e:
+            logging.warning(f"Error deleting temporary file {subtitle_file}: {str(e)}")
+
+    try:
+        video_title = info_dict['title']
+    except Exception as e:
+        video_title = ""
+        logging.error(f"Error getting video title: {str(e)}")
+        return {
+            "video_title": video_title,
+            "description": description,
+            "live_chat": [],
+            "error": f"An error occurred while getting video title: {str(e)}"
+        }
+
+    return {
+        "video_title": video_title,
+        "description": description,
+        "live_chat": live_chat_messages
+    }
+
+
+def get_desc_chat(video_url, API_KEY):
+    st.write(f"Analyzing video: {video_url}")
+    video_info = get_video_details_with_chat(video_url, API_KEY)
+
+    if "error" in video_info:
+        st.error(f"Error: {video_info['error']}")
+        return "", [], [], {}
+
+    video_description = video_info['description']
+    video_title = video_info['video_title']
+    video_live_chat = video_info['live_chat']
+
+    clean_description = preprocess_model_input_str(video_description, video_title)
+    clean_live_chat = [preprocess_model_input_str(live_chat) for live_chat in video_live_chat]
+
+    return clean_description, clean_live_chat, video_info['video_title'], video_info['live_chat']
+
+def get_top_comments(live_chat, top_n=3):
+    comment_sentiments = []
+
+    for comment in live_chat:
+        sentiment_label, sentiment_scores = analyze_sentiment(comment)
+        if sentiment_label == "Positive":
+            comment_sentiments.append((comment, sentiment_scores[2]))  # Positive score
+        elif sentiment_label == "Negative":
+            comment_sentiments.append((comment, sentiment_scores[0]))  # Negative score
+
+    # Sort by sentiment score and get top comments
+    positive_comments = sorted([cs for cs in comment_sentiments if analyze_sentiment(cs[0])[0] == "Positive"], key=lambda x: x[1], reverse=True)[:top_n]
+    negative_comments = sorted([cs for cs in comment_sentiments if analyze_sentiment(cs[0])[0] == "Negative"], key=lambda x: x[1], reverse=True)[:top_n]
+
+    return [comment for comment, score in positive_comments], [comment for comment, score in negative_comments]
+
+
+def plot_sentiment_pie_chart(positive_count, negative_count, total_comments):
+    labels = ['😊 Positive', '😠 Negative', '😐 Neutral']
+    sizes = [positive_count, negative_count, total_comments - (positive_count + negative_count)]
     colors = ['#DFF0D8', '#F2DEDE', '#EAEAEA']
+    explode = (0.1, 0, 0)
+
     fig, ax = plt.subplots()
-    ax.pie(sizes, labels=labels, colors=colors, autopct='%1.1f%%', startangle=140)
+    ax.pie(sizes, explode=explode, labels=labels, colors=colors, autopct='%1.1f%%', startangle=140)
     ax.axis('equal')
     return fig
 
-# 🎯 **Giao diện Streamlit**
-st.set_page_config(page_title="YouTube Video Analysis")
-st.markdown("## 🎥 YouTube Video Sentiment and Summary 🎯", unsafe_allow_html=True)
+def extract_video_id(url):
+    pattern = re.compile(r"(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})")
+    match = pattern.search(url)
+    if match:
+        return match.group(1)
+    return None
 
-# Nhập link YouTube từ người dùng
-youtube_link = st.text_input("Enter YouTube Video Link:")
-video_id = extract_video_id(youtube_link)
 
-# 📌 Hiển thị thông tin video khi nhấn nút "Analyze Video"
-if st.button("Analyze Video"):
-    if not youtube_link:
-        st.error("Please enter a valid YouTube URL.")
-    elif not video_id:
-        st.error("Invalid YouTube URL.")
+# Setup Streamlit app
+st.set_page_config(page_title="🎥 YouTube Video Sentiment and Summarization")
+st.markdown("<h1 style='text-align: center; color: #FF5733;'>🎥 YouTube Video Sentiment and Summarization 🎯</h1>", unsafe_allow_html=True)
+
+# Initialize session state
+if 'responses' not in st.session_state:
+    st.session_state.responses = []
+
+# Unique key for text input
+youtube_link = st.text_input("🔗 Enter YouTube Video Link Below:", key="youtube_link_input")
+
+# Add Submit URL button below the URL input field
+if st.button("🔍 Analyze Video"):
+    if youtube_link.strip() == "":
+        st.session_state.responses = []
+        st.write("The video link has been removed. All previous responses have been cleared.")
     else:
-        with st.spinner("Fetching video details..."):
-            try:
-                video_details = get_video_details(video_id)
-                st.image(f"http://img.youtube.com/vi/{video_id}/0.jpg", use_column_width=True)
-                for key, value in video_details.items():
-                    st.markdown(f"**{key.capitalize()}:** {value}")
-            except Exception as e:
-                st.error(str(e))
+        with st.spinner('Collecting video information...'):
+            video_id = extract_video_id(youtube_link)
+            if video_id:
+                try:
+                    clean_description, clean_live_chat, video_title, live_chat_messages = get_desc_chat(youtube_link, API_KEY)
 
-# 📌 Tóm tắt video khi nhấn nút "Generate Summary"
-if st.button("Generate Summary"):
-    if not youtube_link or not video_id:
-        st.error("Please enter a valid YouTube URL first.")
-    else:
-        with st.spinner("Generating summary..."):
-            try:
-                transcript = extract_transcript(video_id, ['vi', 'en'])
-                summary = get_gemini_response(transcript)
-                st.markdown("### Summary:")
-                st.write(summary)
-            except Exception as e:
-                st.error(str(e))
+                    positive_count = sum(1 for comment in clean_live_chat if analyze_sentiment(comment)[0] == "Positive")
+                    negative_count = sum(1 for comment in clean_live_chat if analyze_sentiment(comment)[0] == "Negative")
+                    total_comments = len(clean_live_chat)
 
- for idx, response in enumerate(st.session_state.responses):
+                    # Get top 3 positive and negative comments
+                    positive_comments, negative_comments = get_top_comments(live_chat_messages)
+
+                    response = {
+                        'thumbnail_url': f"http://img.youtube.com/vi/{video_id}/0.jpg",
+                        'video_details': {
+                            'title': video_title,
+                            'channel_title': None,
+                            'view_count': None,
+                            'upload_date': None,
+                            'duration': None,
+                            'like_count': None,
+                            'dislike_count': None
+                        },
+                        'comments': {
+                            'total_comments': total_comments,
+                            'positive_comments': positive_count,
+                            'negative_comments': negative_count,
+                            'positive_comments_list': positive_comments,
+                            'negative_comments_list': negative_comments
+                        },
+                        "description": clean_description
+                    }
+                    st.session_state.responses.append(response)
+                except Exception as e:
+                    st.error(f"Error: {e}")
+            else:
+                st.error("Invalid YouTube URL")
+
+# Display stored responses
+for idx, response in enumerate(st.session_state.responses):
     video_details = response.get('video_details')
     comments = response.get('comments')
 
@@ -171,36 +289,30 @@ if st.button("Generate Summary"):
 
         st.markdown(f"<h2 style='text-align: center; color: #FF4500;'>📹 Video Title:</h2>", unsafe_allow_html=True)
         st.markdown(f"<p style='text-align: center;'>{video_details['title']}</p>", unsafe_allow_html=True)
-        
-        st.markdown(f"<h2 style='text-align: center; color: #FF4500;'>📺 Channel Name:</h2>", unsafe_allow_html=True)
-        st.markdown(f"<p style='text-align: center;'>{video_details['channel_title']}</p>", unsafe_allow_html=True)
-        
-        st.markdown(f"<h2 style='text-align: center; color: #FF4500;'>👁️ Views:</h2>", unsafe_allow_html=True)
-        st.markdown(f"<p style='text-align: center;'>{video_details['view_count']}</p>", unsafe_allow_html=True)
-        
-        st.markdown(f"<h2 style='text-align: center; color: #FF4500;'>📅 Upload Date:</h2>", unsafe_allow_html=True)
-        st.markdown(f"<p style='text-align: center;'>{video_details['upload_date']}</p>", unsafe_allow_html=True)
-        
-        st.markdown(f"<h2 style='text-align: center; color: #FF4500;'>⏱️ Duration:</h2>", unsafe_allow_html=True)
-        st.markdown(f"<p style='text-align: center;'>{video_details['duration']}</p>", unsafe_allow_html=True)
-        
-        st.markdown(f"<h2 style='text-align: center; color: #FF4500;'>👍 Likes:</h2>", unsafe_allow_html=True)
-        st.markdown(f"<p style='text-align: center;'>{video_details['like_count']}</p>", unsafe_allow_html=True)
-        
-        st.markdown(f"<h2 style='text-align: center; color: #FF4500;'>👎 Dislikes:</h2>", unsafe_allow_html=True)
-        st.markdown(f"<p style='text-align: center;'>{video_details['dislike_count']}</p>", unsafe_allow_html=True)
-        
+
+        st.markdown(f"<h2 style='text-align: center; color: #FF4500;'>📝 Description:</h2>", unsafe_allow_html=True)
+        st.markdown(f"<p style='text-align: center;'>{response['description']}</p>", unsafe_allow_html=True)
+
         st.markdown(f"<h2 style='text-align: center; color: #FF4500;'>💬 Total Comments:</h2>", unsafe_allow_html=True)
         st.markdown(f"<p style='text-align: center;'>{comments['total_comments']}</p>", unsafe_allow_html=True)
 
         # Plot and display pie chart for comments sentiment
         fig = plot_sentiment_pie_chart(comments['positive_comments'], comments['negative_comments'], comments['total_comments'])
         st.pyplot(fig)
-        
+
         st.markdown(f"<h2 style='text-align: center; color: #32CD32;'>👍 Positive Comments:</h2>", unsafe_allow_html=True)
         st.markdown(f"<p style='text-align: center;'>{comments['positive_comments']} ({(comments['positive_comments']/comments['total_comments'])*100:.2f}%)</p>", unsafe_allow_html=True)
-        
+
         st.markdown(f"<h2 style='text-align: center; color: #FF6347;'>👎 Negative Comments:</h2>", unsafe_allow_html=True)
         st.markdown(f"<p style='text-align: center;'>{comments['negative_comments']} ({(comments['negative_comments']/comments['total_comments'])*100:.2f}%)</p>", unsafe_allow_html=True)
-        
-        
+
+        # Add a toggle button to show/hide the top comments
+        show_comments = st.checkbox("Show Top Comments", key=f"toggle_comments_{idx}")
+        if show_comments:
+            st.markdown(f"<h2 style='text-align: center; color: #32CD32;'>👍 Top 3 Positive Comments:</h2>", unsafe_allow_html=True)
+            for comment in comments['positive_comments_list']:
+                st.markdown(f"<div style='background-color: #DFF0D8; padding: 10px; border-radius: 5px;'>{comment}</div>", unsafe_allow_html=True)
+
+            st.markdown(f"<h2 style='text-align: center; color: #FF6347;'>👎Top 3 Negative Comments:</h2>", unsafe_allow_html=True)
+            for comment in comments['negative_comments_list']:
+                st.markdown(f"<div style='background-color: #F2DEDE; padding: 10px; border-radius: 5px;'>{comment}</div>", unsafe_allow_html=True)
