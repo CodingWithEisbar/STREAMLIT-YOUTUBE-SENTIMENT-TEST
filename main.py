@@ -447,8 +447,8 @@ for idx, response in enumerate(st.session_state.responses):
 
     with tab1:
         # Page 1: Video Information
-        st.markdown("<h2 style='text-align: center; color: #FF4500;'>📹 Video Title:</h2>", unsafe_allow_html=True)
-        st.markdown(f"<p style='text-align: center;'>{video_details['title']}</p>", unsafe_allow_html=True)
+        st.markdown("<h2 style='text-align: left; color: #FF4500;'>📹 Video Title:</h2>", unsafe_allow_html=True)
+        st.markdown(f"<p style='text-align: right;'>{video_details['title']}</p>", unsafe_allow_html=True)
 
         st.image(response['thumbnail_url'], use_column_width=True)
 
