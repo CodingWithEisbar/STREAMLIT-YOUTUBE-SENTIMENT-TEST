@@ -25,7 +25,7 @@ logging.basicConfig(filename='app.log', level=logging.ERROR,
 genai.configure(api_key=GOOGLE_API_KEY)
 
 MODEL_PATH = ""  # Set this to the directory if you have a folder ofr the weights, other wise it would be ""
-MODEL_FILE = "sentiment_classifier (1).pth"
+MODEL_FILE = "sentiment_classifier.pth"
 
 
 @st.cache_resource
